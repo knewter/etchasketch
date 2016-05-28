@@ -18,6 +18,7 @@ type alias Model =
   , keyboardModel : Keyboard.Extra.Model
   , clock : Time
   , animation : Animation
+  , animations : List (Time -> Animation)
   }
 
 
@@ -30,14 +31,6 @@ type Msg
   | Shake
 
 
-shakeAnimation : Time -> Animation
-shakeAnimation t =
-  animation t
-  |> from 0
-  |> to 360
-  |> duration (500*Time.millisecond)
-
-
 init : ( Model, Cmd Msg )
 init =
   let
@@ -48,8 +41,8 @@ init =
       , y = 0
       , keyboardModel = keyboardModel
       , clock = 0
-      -- We'll start out with a static animation again
       , animation = static 0
+      , animations = []
       }
     , Cmd.batch
       [ Cmd.map KeyboardExtraMsg keyboardCmd
@@ -93,6 +86,44 @@ drawLine points =
     |> traced (solid red)
 
 
+shakeAnimation : Time -> Animation
+shakeAnimation t =
+  animation t
+  |> from 0
+  |> to 40
+  |> duration (500*Time.millisecond)
+
+shakeAnimation' : Time -> Animation
+shakeAnimation' t =
+  animation t
+  |> from 40
+  |> to -20
+  |> duration (500*Time.millisecond)
+
+shakeAnimation'' : Time -> Animation
+shakeAnimation'' t =
+  animation t
+  |> from -20
+  |> to 10
+  |> duration (500*Time.millisecond)
+
+shakeAnimation''' : Time -> Animation
+shakeAnimation''' t =
+  animation t
+  |> from 10
+  |> to 0
+  |> duration (500*Time.millisecond)
+
+
+animations : List (Time -> Animation)
+animations =
+  [ shakeAnimation
+  , shakeAnimation'
+  , shakeAnimation''
+  , shakeAnimation'''
+  ]
+
+
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
@@ -110,37 +141,48 @@ update msg model =
         {x, y} = Keyboard.Extra.arrows model.keyboardModel
         newX = model.x + x
         newY = model.y + y
-        newClock = model.clock + dt
-        -- We'll return newPoints and a newAnimation from a case statement based
-        -- on whether or not we're presently running an animation, using
-        -- destructuring and returning a 2-tuple from each branch
-        (newPoints, newAnimation) =
-          -- Static animations are always done, so if it's a static animation
-          -- we'll just return the existing points and animation
-          case (model.animation `equals` (static 0)) of
+        -- We need to also return our list of new animations in our 3-tuple now
+        (newPoints, newAnimation, newAnimations) =
+          -- We'll start off checking to see if the current animation is done, now
+          case (isDone model.clock model.animation) of
             True ->
-              (model.points, model.animation)
+              -- If it's done, we'll set up the next animation and reduce the
+              -- list by one element.  If we're out of animations, we'll move to
+              -- the static animation and an empty list of animations
+              let
+                nextAnimation =
+                  case List.head model.animations of
+                    Just animation -> animation model.clock
+                    Nothing -> static 0
+                nextAnimations = (List.tail model.animations) |> Maybe.withDefault([])
+                -- We know the shaking just finished if the current animation is
+                -- done, it's not static, and the nextAnimation is static
+                justFinished =
+                  nextAnimation `equals` (static 0) &&
+                  not (model.animation `equals` (static 0))
+                -- If we just finished our shake, we'll clear out the points
+                nextPoints =
+                  case justFinished of
+                    True -> []
+                    False -> model.points
+              in
+                (nextPoints, nextAnimation, nextAnimations)
             False ->
-              -- Otherwise, when the animation's done we'll clear the points and
-              -- switch to the static animation again
-              case (isDone model.clock model.animation) of
-                True -> ([], (static 0))
-                -- If it's not done we won't change anything
-                False -> (model.points, model.animation)
-
+              -- If the animation is not done, we won't change anything
+              (model.points, model.animation, model.animations)
         newPoints' =
           case (x, y) of
             (0, 0) ->
               newPoints
             _ ->
               (newX, newY) :: newPoints
-        -- We'll create an intermediate model that adds our new x and y points
-        -- and updates the clock and animation
         model' =
           { model
-          | points = newPoints'
-          , clock = newClock
+          | points = (newX, newY) :: newPoints'
+          , clock = model.clock + dt
           , animation = newAnimation
+          -- And we'll update our list of animations
+          , animations = newAnimations
           }
       in
         case (x, y) of
@@ -154,9 +196,7 @@ update msg model =
 
     Shake ->
       { model
-      -- We'll update the animation to our shakeAnimation seeded with our
-      -- current clock when the button is pressed.
-      | animation = shakeAnimation model.clock
+      | animations = animations
       } ! []
 
 
