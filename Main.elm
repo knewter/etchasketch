@@ -3,13 +3,17 @@ import Collage exposing (..)
 import Element exposing (..)
 import Keyboard
 import Html exposing (..)
+import Html.Events exposing (onClick)
 import Html.App as App
+import Keyboard.Extra
+import Time exposing (Time, second)
 
 
 type alias Model =
   { points : List Point
   , x : Int
   , y : Int
+  , keyboardModel : Keyboard.Extra.Model
   }
 
 
@@ -17,22 +21,40 @@ type alias Point = (Int, Int)
 
 
 type Msg
-  = KeyUp Keyboard.KeyCode
+  = KeyboardExtraMsg Keyboard.Extra.Msg
+  | Tick Time
+  | Shake
 
 
-initialModel : Model
-initialModel =
-  { points = [(0, 0)]
-  , x = 0
-  , y = 0
-  }
+init : ( Model, Cmd Msg )
+init =
+  let
+    ( keyboardModel, keyboardCmd ) = Keyboard.Extra.init
+  in
+    ( { points = [(0, 0)]
+      , x = 0
+      , y = 0
+      , keyboardModel = keyboardModel
+      }
+    , Cmd.batch
+      [ Cmd.map KeyboardExtraMsg keyboardCmd
+      ]
+    )
+
+
+shakeButton : Html Msg
+shakeButton =
+  Html.button [onClick Shake] [ Html.text "Shake it good" ]
 
 
 view : Model -> Html Msg
 view model =
-  collage 800 800
-    [ (drawLine model.points) ]
-    |> Element.toHtml
+  div []
+    [ collage 800 800
+        [ (drawLine model.points) ]
+        |> Element.toHtml
+    , shakeButton
+    ]
 
 
 drawLine : List Point -> Form
@@ -55,28 +77,35 @@ drawLine points =
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    KeyUp keyCode ->
-      ( keyUp keyCode model, Cmd.none )
+    KeyboardExtraMsg keyMsg ->
+      let
+        ( keyboardModel, keyboardCmd ) =
+            Keyboard.Extra.update keyMsg model.keyboardModel
+      in
+        ( { model | keyboardModel = keyboardModel }
+        , Cmd.map KeyboardExtraMsg keyboardCmd
+        )
 
+    Tick _ ->
+      let
+        {x, y} = Keyboard.Extra.arrows model.keyboardModel
+        newX = model.x + x
+        newY = model.y + y
+      in
+        case (x, y) of
+          (0, 0) ->
+            model ! []
+          _ ->
+            { model | points = (newX, newY) :: model.points, x = newX, y = newY } ! []
 
-keyUp : Keyboard.KeyCode -> Model -> Model
-keyUp keyCode model =
-  case keyCode of
-    38 -> -- up
-      { model | y = model.y + 1, points = (model.x, model.y + 1) :: model.points }
-    40 -> -- down
-      { model | y = model.y - 1, points = (model.x, model.y - 1) :: model.points }
-    37 -> -- left
-      { model | x = model.x - 1, points = (model.x - 1, model.y) :: model.points }
-    39 -> -- right
-      { model | x = model.x + 1, points = (model.x + 1, model.y) :: model.points }
-    _ -> model
+    Shake ->
+      { model | points = [] } ! []
 
 
 main : Program Never
 main =
   App.program
-    { init = initialModel ! []
+    { init = init
     , update = update
     , view = view
     , subscriptions = subscriptions
@@ -85,4 +114,7 @@ main =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  Keyboard.ups KeyUp
+  Sub.batch
+    [ Sub.map KeyboardExtraMsg Keyboard.Extra.subscriptions
+    , Time.every (1/30 * second) Tick
+    ]
