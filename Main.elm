@@ -19,6 +19,7 @@ type alias Model =
   , clock : Time
   , animation : Animation
   , animations : List (Time -> Animation)
+  , color : Color
   }
 
 
@@ -29,6 +30,7 @@ type Msg
   = KeyboardExtraMsg Keyboard.Extra.Msg
   | Tick Time
   | Shake
+  | SetColor Color
 
 
 init : ( Model, Cmd Msg )
@@ -43,6 +45,7 @@ init =
       , clock = 0
       , animation = static 0
       , animations = []
+      , color = red
       }
     , Cmd.batch
       [ Cmd.map KeyboardExtraMsg keyboardCmd
@@ -55,6 +58,11 @@ shakeButton =
   Html.button [onClick Shake] [ Html.text "Shake it good" ]
 
 
+colorButton : Color -> String -> Html Msg
+colorButton color label =
+  Html.button [onClick (SetColor color)] [ Html.text label ]
+
+
 view : Model -> Html Msg
 view model =
   let
@@ -63,27 +71,27 @@ view model =
   in
     div []
       [ collage 800 800
-          [ (rotate (degrees angle) (drawLine model.points)) ]
+          [ (rotate (degrees angle) (drawLine model.points model.color)) ]
           |> Element.toHtml
       , shakeButton
+      , colorButton red "Red"
+      , colorButton yellow "Yellow"
+      , colorButton blue "Blue"
       ]
 
 
-drawLine : List Point -> Form
-drawLine points =
+drawLine : List Point -> Color -> Form
+drawLine points color =
   let
-    -- Our points are integers, but a path needs a list of floats.  We'll make a
-    -- function to turn a 2-tuple of ints into a 2-tuple of floats
-    intsToFloats : (Int, Int) -> (Float, Float)
-    intsToFloats (x, y) =
-      (toFloat x, toFloat y)
+    intsToFloats : ( Int, Int ) -> ( Float, Float )
+    intsToFloats ( x, y ) =
+      ( toFloat x, toFloat y )
 
-    -- Then we'll map our points across that function
-    shape = path (List.map intsToFloats points)
+    shape =
+      path (List.map intsToFloats points)
   in
-    -- Finally, we'll trace that list of points in solid red
     shape
-    |> traced (solid red)
+      |> traced (solid color)
 
 
 shakeAnimation : Time -> Animation
@@ -197,6 +205,11 @@ update msg model =
     Shake ->
       { model
       | animations = animations
+      } ! []
+
+    SetColor color ->
+      { model
+      | color = color
       } ! []
 
 
